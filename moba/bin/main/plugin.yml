@@ -1,0 +1,5 @@
+name: Moba
+main: com.serveur.moba.MobaPlugin
+version: ${version}
+api-version: "1.21"
+author: Gwendal Cariou
