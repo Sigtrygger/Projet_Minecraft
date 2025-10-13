@@ -3,3 +3,17 @@ main: com.serveur.moba.MobaPlugin
 version: 0.1.0
 api-version: "1.21"
 author: Gwendal Cariou
+
+commands:
+  class:
+    description: Choisir sa classe (tank, bruiser, adc)
+    usage: /class <tank|bruiser|adc>
+  forcepvp:
+    description: Forcer le mode pvp d'une lane
+    usage: /forcepvp <top|mid|bot> <on|off>
+    permission: moba.admin
+
+permissions:
+  moba.admin:
+    description: Permet d'utiliser les commandes d'administration du plugin MOBA
+    default: op
