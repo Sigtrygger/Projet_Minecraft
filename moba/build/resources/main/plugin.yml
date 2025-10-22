@@ -12,6 +12,10 @@ commands:
     description: Forcer le mode pvp d'une lane
     usage: /forcepvp <top|mid|bot> <on|off>
     permission: moba.admin
+  q: { description: Lance le sort Q }
+  w: { description: Lance le sort W }
+  e: { description: Lance le sort E }
+  r: { description: Lance le sort R }
 
 permissions:
   moba.admin:
