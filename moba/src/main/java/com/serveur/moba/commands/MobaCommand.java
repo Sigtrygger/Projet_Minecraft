@@ -4,7 +4,7 @@ import org.bukkit.Location;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scoreboard.Team;
+import com.serveur.moba.game.enums.Team;
 
 import com.serveur.moba.game.GameManager;
 import com.serveur.moba.game.enums.Lane;
@@ -16,13 +16,20 @@ public class MobaCommand implements CommandExecutor, TabCompleter {
     private final JavaPlugin plugin;
     private final GameManager gm;
 
+    private final com.serveur.moba.state.PlayerStateService playerState;
+    private final com.serveur.moba.ability.AbilityRegistry abilities;
+
     // pour /moba setzone (positions temporaires par joueur)
     private final Map<UUID, Location> pos1 = new HashMap<>();
     private final Map<UUID, Location> pos2 = new HashMap<>();
 
-    public MobaCommand(JavaPlugin plugin, GameManager gm) {
+    public MobaCommand(JavaPlugin plugin, GameManager gm,
+            com.serveur.moba.state.PlayerStateService playerState,
+            com.serveur.moba.ability.AbilityRegistry abilities) {
         this.plugin = plugin;
         this.gm = gm;
+        this.playerState = playerState;
+        this.abilities = abilities;
     }
 
     // ---------- ROUTER PRINCIPAL ----------
@@ -70,7 +77,7 @@ public class MobaCommand implements CommandExecutor, TabCompleter {
             }
             case "reload" -> {
                 plugin.reloadConfig();
-                gm.loadFromConfig(plugin.getConfig());
+                gm.reloadFromConfig(plugin.getConfig());
                 sender.sendMessage("§aConfig rechargée.");
             }
             case "setnexus" -> {
@@ -78,31 +85,63 @@ public class MobaCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage("§e/moba setnexus <blue|red>");
                     return;
                 }
-                com.serveur.moba.game.enums.Team t = args[1].equalsIgnoreCase("blue") ? com.serveur.moba.game.enums.Team.BLUE : com.serveur.moba.game.enums.Team.RED;
+                Team t = args[1].equalsIgnoreCase("blue") ? Team.BLUE : Team.RED;
                 Location l = p.getLocation().clone();
-                int hp = plugin.getConfig().getInt("nexus.default_hp", 5000);
-                if (t.equals("BLUE"))
-                    gm.nexusBlue = new com.serveur.moba.game.Nexus(t, l, hp);
-                else
-                    gm.nexusRed = new com.serveur.moba.game.Nexus(t, l, hp);
+                int hpDefault = plugin.getConfig().getInt("nexus.default_hp", 5000);
+
+                // on garde la position dans config.yml
+                String base = "nexus." + (t == Team.BLUE ? "blue" : "red");
+                plugin.getConfig().set(base + ".world", l.getWorld().getName());
+                plugin.getConfig().set(base + ".x", l.getBlockX());
+                plugin.getConfig().set(base + ".y", l.getBlockY());
+                plugin.getConfig().set(base + ".z", l.getBlockZ());
+                plugin.getConfig().set(base + ".hp", plugin.getConfig().getInt(base + ".hp", hpDefault));
+                plugin.saveConfig();
+
+                // plus tard, quand on implémentera le Nexus runtime, on ajoutera des setters
+                // dans GameManager
+                sender.sendMessage("§aNexus " + (t == Team.BLUE ? "blue" : "red") + " positionné en " + fmt(l));
+
                 sender.sendMessage("§aNexus " + t + " placé en " + fmt(l));
             }
+
             case "setzone" -> {
                 if (args.length < 2) {
                     sender.sendMessage("§e/moba setzone <name>  (clic gauche=définit pos1, clic droit=pos2)");
                     return;
                 }
-                String name = args[1];
+                // dans handleMoba -> "setzone"
+                String name = args[1].toLowerCase();
+                if (!List.of("top", "mid", "bot").contains(name)) {
+                    sender.sendMessage("§cNom invalide. Utilise: top, mid, bot");
+                    return;
+                }
+
                 Location a = pos1.get(p.getUniqueId());
                 Location b = pos2.get(p.getUniqueId());
                 if (a == null || b == null) {
                     sender.sendMessage("§eClique gauche = pos1, clique droit = pos2, puis /moba setzone " + name);
                     return;
                 }
-                var c = new com.serveur.moba.game.Cuboid(a.getWorld().getName(),
+                var c = new com.serveur.moba.game.Cuboid(
+                        a.getWorld().getName(),
                         a.getBlockX(), a.getBlockY(), a.getBlockZ(),
                         b.getBlockX(), b.getBlockY(), b.getBlockZ());
-                gm.zoneManager.setZone(name, c);
+                gm.setZone(name, c); // façade en mémoire
+
+                // (optionnel) et si tu veux PERSISTer aussi :
+                String base = "zones." + name;
+                plugin.getConfig().set(base + ".world", a.getWorld().getName());
+                plugin.getConfig().set(base + ".x1", a.getBlockX());
+                plugin.getConfig().set(base + ".y1", a.getBlockY());
+                plugin.getConfig().set(base + ".z1", a.getBlockZ());
+                plugin.getConfig().set(base + ".x2", b.getBlockX());
+                plugin.getConfig().set(base + ".y2", b.getBlockY());
+                plugin.getConfig().set(base + ".z2", b.getBlockZ());
+                plugin.saveConfig();
+                // puis recharger les structures si besoin :
+                gm.reloadFromConfig(plugin.getConfig());
+
                 sender.sendMessage("§aZone '" + name + "' enregistrée.");
             }
             default -> sender.sendMessage("§eSous-commande inconnue.");
@@ -120,21 +159,19 @@ public class MobaCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        Lane lane = switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "top" -> Lane.TOP;
-            case "mid" -> Lane.MID;
-            case "bot" -> Lane.BOT;
-            default -> null;
-        };
-        if (lane == null) {
-            sender.sendMessage("§cLane invalide.");
+        String laneName = args[0].toLowerCase(Locale.ROOT);
+        if (!List.of("top", "mid", "bot").contains(laneName)) {
+            sender.sendMessage("§cLane invalide. Utilise: top, mid, bot");
             return;
         }
-
         boolean on = args[1].equalsIgnoreCase("on");
-        gm.pvpGate.set(lane, on);
-        sender.sendMessage(
-                "§aPvP " + (on ? "activé" : "désactivé") + " sur " + lane.name().toLowerCase(Locale.ROOT) + ".");
+        boolean ok = gm.forcePvp(laneName, on);
+        if (!ok) {
+            sender.sendMessage("§cLane inconnue.");
+            return;
+        }
+        sender.sendMessage("§aPvP " + (on ? "activé" : "désactivé") + " sur " + laneName + ".");
+
     }
 
     // ---------- /class <tank|bruiser|adc> ----------
@@ -142,13 +179,19 @@ public class MobaCommand implements CommandExecutor, TabCompleter {
         if (!checkPlayer(sender))
             return;
         Player p = (Player) sender;
-        if (args.length < 1) {
+
+        if (args.length != 1) {
             p.sendMessage("§eUsage: /class <tank|bruiser|adc>");
             return;
         }
-        String cls = args[0].toLowerCase(Locale.ROOT);
-        // TODO: branche ton système de classes ici
-        p.sendMessage("§aClasse sélectionnée: " + cls);
+        String choice = args[0].toLowerCase(Locale.ROOT);
+
+        boolean ok = playerState.setClass(p.getUniqueId(), choice);
+        if (ok) {
+            p.sendMessage("§aClasse définie à " + choice);
+        } else {
+            p.sendMessage("§cClasse inconnue (choix possibles: tank, bruiser, adc)");
+        }
     }
 
     // ---------- /q /w /e /r ----------
@@ -156,8 +199,29 @@ public class MobaCommand implements CommandExecutor, TabCompleter {
         if (!checkPlayer(sender))
             return;
         Player p = (Player) sender;
-        // TODO: vérifie la classe du joueur et résous le sort associé à key
-        p.sendMessage("§bLancement du sort " + key.toUpperCase(Locale.ROOT) + " !");
+
+        var state = playerState.get(p.getUniqueId());
+        if (state == null) {
+            p.sendMessage("§cAucune classe sélectionnée. Utilise §e/class <tank|bruiser|adc>");
+            return;
+        }
+
+        com.serveur.moba.ability.AbilityKey abilityKey = switch (key.toLowerCase(Locale.ROOT)) {
+            case "q" -> com.serveur.moba.ability.AbilityKey.Q;
+            case "w" -> com.serveur.moba.ability.AbilityKey.W;
+            case "e" -> com.serveur.moba.ability.AbilityKey.E;
+            default -> com.serveur.moba.ability.AbilityKey.R;
+        };
+
+        var ability = abilities.get(state.role, abilityKey);
+        if (ability == null) {
+            p.sendMessage("§cAucune compétence assignée à cette touche pour ta classe.");
+            return;
+        }
+
+        boolean ok = ability.cast(new com.serveur.moba.ability.AbilityContext(plugin, p));
+        if (!ok)
+            p.sendMessage("§cImpossible de lancer le sort.");
     }
 
     // ---------- Tab-complete ----------

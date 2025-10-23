@@ -1,6 +1,7 @@
 package com.serveur.moba;
 
 import com.serveur.moba.ability.AbilityKey;
+import com.serveur.moba.commands.MobaCommand;
 import com.serveur.moba.lane.LaneManager;
 import com.serveur.moba.listeners.PvpGuardListener;
 import com.serveur.moba.state.PlayerStateService;
@@ -23,8 +24,8 @@ import org.jetbrains.annotations.NotNull;
 
 public final class MobaPlugin extends JavaPlugin {
 
-        private LaneManager laneManager;
         private PlayerStateService playerState;
+        private com.serveur.moba.game.GameManager gameManager;
 
         private com.serveur.moba.ability.AbilityRegistry abilities;
         private com.serveur.moba.ability.CooldownService cooldowns;
@@ -34,11 +35,21 @@ public final class MobaPlugin extends JavaPlugin {
         private final java.util.Map<java.util.UUID, org.bukkit.Location> pos1 = new java.util.HashMap<>();
         private final java.util.Map<java.util.UUID, org.bukkit.Location> pos2 = new java.util.HashMap<>();
 
-        public void setPos1(java.util.UUID id, org.bukkit.Location l) { pos1.put(id, l); }
-        public void setPos2(java.util.UUID id, org.bukkit.Location l) { pos2.put(id, l); }
-        public org.bukkit.Location getPos1(java.util.UUID id) { return pos1.get(id); }
-        public org.bukkit.Location getPos2(java.util.UUID id) { return pos2.get(id); }
+        public void setPos1(java.util.UUID id, org.bukkit.Location l) {
+                pos1.put(id, l);
+        }
 
+        public void setPos2(java.util.UUID id, org.bukkit.Location l) {
+                pos2.put(id, l);
+        }
+
+        public org.bukkit.Location getPos1(java.util.UUID id) {
+                return pos1.get(id);
+        }
+
+        public org.bukkit.Location getPos2(java.util.UUID id) {
+                return pos2.get(id);
+        }
 
         @Override
         public void onEnable() {
@@ -47,7 +58,7 @@ public final class MobaPlugin extends JavaPlugin {
 
                 // On instancie les services
                 this.playerState = new PlayerStateService(this);
-                this.laneManager = new LaneManager(this);
+                this.gameManager = new com.serveur.moba.game.GameManager(this);
                 // champs
                 this.cooldowns = new com.serveur.moba.ability.CooldownService();
                 this.combat = new com.serveur.moba.combat.CombatTagService(3000L);
@@ -105,15 +116,30 @@ public final class MobaPlugin extends JavaPlugin {
                 getLogger().info("Abilities init OK.");
 
                 // On enregistre le listener d'annulation des dégâts
-                Bukkit.getPluginManager().registerEvents((@NotNull Listener) new PvpGuardListener(laneManager), this);
+                Bukkit.getPluginManager().registerEvents(
+                                new com.serveur.moba.listeners.PvpGuardListener(gameManager.lane()), this);
                 getServer().getPluginManager()
                                 .registerEvents(new com.serveur.moba.util.ProtectionListeners(globalFlags), this);
-
                 getServer().getPluginManager().registerEvents(new com.serveur.moba.listeners.WandListener(this), this);
 
+                MobaCommand mobaCmd = new MobaCommand(this, gameManager, playerState, abilities);
+
+                getCommand("moba").setExecutor(mobaCmd);
+                getCommand("moba").setTabCompleter(mobaCmd);
+
+                getCommand("forcepvp").setExecutor(mobaCmd);
+                getCommand("forcepvp").setTabCompleter(mobaCmd);
+
+                getCommand("class").setExecutor(mobaCmd);
+                getCommand("class").setTabCompleter(mobaCmd);
+
+                getCommand("q").setExecutor(mobaCmd);
+                getCommand("w").setExecutor(mobaCmd);
+                getCommand("e").setExecutor(mobaCmd);
+                getCommand("r").setExecutor(mobaCmd);
 
                 // Programme les fenêtres PvP depuis la config
-                laneManager.startScheduler();
+                gameManager.start();
                 getLogger().info("Moba enabled!");
 
         }
@@ -153,7 +179,7 @@ public final class MobaPlugin extends JavaPlugin {
                                 return true;
                         }
                         boolean on = args[1].equalsIgnoreCase("on");
-                        boolean ok = laneManager.forcePvp(args[0], on);
+                        boolean ok = gameManager.forcePvp(args[0], on);
                         sender.sendMessage(
                                         ok ? "§aPvP " + (on ? "ON" : "OFF") + " pour " + args[0] : "§cLane inconnue.");
                         return true;
@@ -185,83 +211,87 @@ public final class MobaPlugin extends JavaPlugin {
                 }
 
                 if (command.getName().equalsIgnoreCase("moba")) {
-                if (!sender.hasPermission("moba.admin")) {
-                        sender.sendMessage("§cPermission manquante: moba.admin");
-                        return true;
-                }
-                if (!(sender instanceof Player p)) {
-                        sender.sendMessage("§cCommande en jeu uniquement.");
-                        return true;
-                }
-                if (args.length == 0) {
-                        sender.sendMessage("§eUsage: /moba <start|stop|setzone|setnexus|reload>");
-                        return true;
-                }
-
-                switch (args[0].toLowerCase()) {
-                        case "start" -> {
-                        laneManager.startScheduler();
-                        sender.sendMessage("§aPartie lancée.");
-                        }
-                        case "stop" -> {
-                        laneManager.stopScheduler(); // ajoute cette méthode si elle n'existe pas
-                        sender.sendMessage("§cPartie arrêtée.");
-                        }
-                        case "reload" -> {
-                        this.reloadConfig();
-                        laneManager.reloadFromConfig(getConfig()); // ajoute cette méthode côté LaneManager
-                        sender.sendMessage("§aConfig rechargée.");
-                        }
-                        case "setnexus" -> {
-                        if (args.length < 2) {
-                                sender.sendMessage("§e/moba setnexus <blue|red>");
+                        if (!sender.hasPermission("moba.admin")) {
+                                sender.sendMessage("§cPermission manquante: moba.admin");
                                 return true;
                         }
-                        var teamArg = args[1].toLowerCase();
-                        var l = p.getLocation().clone();
-                        // Écrit dans la config (simple et persistant)
-                        String base = "nexus." + (teamArg.equals("blue") ? "blue" : "red");
-                        getConfig().set(base + ".world", l.getWorld().getName());
-                        getConfig().set(base + ".x", l.getBlockX());
-                        getConfig().set(base + ".y", l.getBlockY());
-                        getConfig().set(base + ".z", l.getBlockZ());
-                        if (!getConfig().isSet(base + ".hp")) getConfig().set(base + ".hp", 5000);
-                        saveConfig();
-                        sender.sendMessage("§aNexus " + teamArg + " positionné en " +
-                                l.getWorld().getName() + " " + l.getBlockX() + " " + l.getBlockY() + " " + l.getBlockZ());
-                        }
-                        case "setzone" -> {
-                        if (args.length < 2) {
-                                sender.sendMessage("§e/moba setzone <name>  (clic gauche=pos1, clic droit=pos2)");
+                        if (!(sender instanceof Player p)) {
+                                sender.sendMessage("§cCommande en jeu uniquement.");
                                 return true;
                         }
-                        String name = args[1];
-                        var a = getPos1(p.getUniqueId());
-                        var b = getPos2(p.getUniqueId());
-                        if (a == null || b == null) {
-                                sender.sendMessage("§eDéfinis d'abord pos1 et pos2 (clic gauche/droit sur un bloc).");
+                        if (args.length == 0) {
+                                sender.sendMessage("§eUsage: /moba <start|stop|setzone|setnexus|reload>");
                                 return true;
                         }
-                        String base = "zones." + name;
-                        getConfig().set(base + ".world", a.getWorld().getName());
-                        getConfig().set(base + ".x1", a.getBlockX());
-                        getConfig().set(base + ".y1", a.getBlockY());
-                        getConfig().set(base + ".z1", a.getBlockZ());
-                        getConfig().set(base + ".x2", b.getBlockX());
-                        getConfig().set(base + ".y2", b.getBlockY());
-                        getConfig().set(base + ".z2", b.getBlockZ());
-                        saveConfig();
 
-                        // Si ton LaneManager sait consommer les zones à chaud, recharge-le :
-                        laneManager.reloadFromConfig(getConfig());
+                        switch (args[0].toLowerCase()) {
+                                case "start" -> {
+                                        gameManager.start();
+                                        sender.sendMessage("§aPartie lancée.");
+                                }
+                                case "stop" -> {
+                                        gameManager.stop(); // ajoute cette méthode si elle n'existe pas
+                                        sender.sendMessage("§cPartie arrêtée.");
+                                }
+                                case "reload" -> {
+                                        this.reloadConfig();
+                                        gameManager.reloadFromConfig(getConfig()); // ajoute cette méthode côté
+                                                                                   // LaneManager
+                                        sender.sendMessage("§aConfig rechargée.");
+                                }
+                                case "setnexus" -> {
+                                        if (args.length < 2) {
+                                                sender.sendMessage("§e/moba setnexus <blue|red>");
+                                                return true;
+                                        }
+                                        var teamArg = args[1].toLowerCase();
+                                        var l = p.getLocation().clone();
+                                        // Écrit dans la config (simple et persistant)
+                                        String base = "nexus." + (teamArg.equals("blue") ? "blue" : "red");
+                                        getConfig().set(base + ".world", l.getWorld().getName());
+                                        getConfig().set(base + ".x", l.getBlockX());
+                                        getConfig().set(base + ".y", l.getBlockY());
+                                        getConfig().set(base + ".z", l.getBlockZ());
+                                        if (!getConfig().isSet(base + ".hp"))
+                                                getConfig().set(base + ".hp", 5000);
+                                        saveConfig();
+                                        sender.sendMessage("§aNexus " + teamArg + " positionné en " +
+                                                        l.getWorld().getName() + " " + l.getBlockX() + " "
+                                                        + l.getBlockY() + " " + l.getBlockZ());
+                                }
+                                case "setzone" -> {
+                                        if (args.length < 2) {
+                                                sender.sendMessage(
+                                                                "§e/moba setzone <name>  (clic gauche=pos1, clic droit=pos2)");
+                                                return true;
+                                        }
+                                        String name = args[1];
+                                        var a = getPos1(p.getUniqueId());
+                                        var b = getPos2(p.getUniqueId());
+                                        if (a == null || b == null) {
+                                                sender.sendMessage(
+                                                                "§eDéfinis d'abord pos1 et pos2 (clic gauche/droit sur un bloc).");
+                                                return true;
+                                        }
+                                        String base = "zones." + name;
+                                        getConfig().set(base + ".world", a.getWorld().getName());
+                                        getConfig().set(base + ".x1", a.getBlockX());
+                                        getConfig().set(base + ".y1", a.getBlockY());
+                                        getConfig().set(base + ".z1", a.getBlockZ());
+                                        getConfig().set(base + ".x2", b.getBlockX());
+                                        getConfig().set(base + ".y2", b.getBlockY());
+                                        getConfig().set(base + ".z2", b.getBlockZ());
+                                        saveConfig();
 
-                        sender.sendMessage("§aZone '" + name + "' enregistrée.");
+                                        // Si ton LaneManager sait consommer les zones à chaud, recharge-le :
+                                        gameManager.reloadFromConfig(getConfig());
+
+                                        sender.sendMessage("§aZone '" + name + "' enregistrée.");
+                                }
+                                default -> sender.sendMessage("§eSous-commande inconnue.");
                         }
-                        default -> sender.sendMessage("§eSous-commande inconnue.");
+                        return true;
                 }
-                return true;
-                }
-
 
                 return false;
         }

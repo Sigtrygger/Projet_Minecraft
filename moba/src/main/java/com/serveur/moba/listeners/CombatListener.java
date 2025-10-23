@@ -8,7 +8,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 
 import com.serveur.moba.game.GameManager;
-import com.serveur.moba.game.enums.Lane;
+
+import java.util.Optional;
 
 public class CombatListener implements Listener {
         private final GameManager gm;
@@ -21,23 +22,29 @@ public class CombatListener implements Listener {
         public void onDamage(EntityDamageByEntityEvent e) {
                 if (!(e.getEntity() instanceof Player victim))
                         return;
+
                 Player damager = null;
-                if (e.getDamager() instanceof Player p)
+                if (e.getDamager() instanceof Player p) {
                         damager = p;
-                else if (e.getDamager() instanceof Projectile proj && proj.getShooter() instanceof Player p)
+                } else if (e.getDamager() instanceof Projectile proj && proj.getShooter() instanceof Player p) {
                         damager = p;
+                }
                 if (damager == null)
                         return;
 
-                // Déterminer la lane où ils sont (ex: via gm.zoneManager.nameOf(loc))
-                Location loc = victim.getLocation();
-                String zoneName = gm.zoneManager.nameOf(loc).orElse("");
-                Lane lane = zoneName.startsWith("top") ? Lane.TOP
-                                : zoneName.startsWith("mid") ? Lane.MID : zoneName.startsWith("bot") ? Lane.BOT : null;
-
-                if (lane == null || !gm.pvpGate.isAllowed(lane)) {
+                // On prend la lane du VICTIME (emplacement du combat)
+                Optional<String> laneOpt = gm.lane().laneOf(victim);
+                if (laneOpt.isEmpty()) {
+                        // en dehors des lanes connues -> pas de PvP
                         e.setCancelled(true);
-                        damager.sendMessage("§cLe PvP n'est pas encore autorisé ici.");
+                        damager.sendMessage("§cLe PvP n'est pas autorisé ici.");
+                        return;
+                }
+
+                String laneName = laneOpt.get(); // "top" / "mid" / "bot"
+                if (!gm.lane().isPvpOpen(laneName)) {
+                        e.setCancelled(true);
+                        damager.sendMessage("§cLe PvP n'est pas encore autorisé sur la lane §e" + laneName + "§c.");
                 }
         }
 }
