@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -124,4 +125,14 @@ public class LaneManager {
     public boolean isPvpOpen(String lane) {
         return lanesPvpState.getOrDefault(lane.toLowerCase(), false);
     }
+
+    public void stopScheduler() {
+    // TODO: annuler le/les BukkitTask(s) lancés dans startScheduler()
+}
+
+public void reloadFromConfig(org.bukkit.configuration.file.FileConfiguration cfg) {
+    // TODO: relire les fenêtres PvP et zones depuis cfg
+    // puis éventuellement redémarrer le scheduler
+}
+
 }

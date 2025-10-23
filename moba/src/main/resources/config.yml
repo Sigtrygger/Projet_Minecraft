@@ -27,3 +27,8 @@ lanes:
 timers:
   # Temps en secondes avant le début des fenêtres de PvP (pour permettre aux joueurs de se préparer)
   game_start_delay_sec: 30
+
+nexus:
+  # Coordonnées des nexus des équipes (à modifier)
+  blue: { world: world, x: 10, y: 80, z: 10, hp: 5000 }
+  red: { world: world, x: -10, y: 80, z: -10, hp: 5000 }

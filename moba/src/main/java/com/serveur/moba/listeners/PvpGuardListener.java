@@ -1,4 +1,4 @@
-package com.serveur.moba.pvp;
+package com.serveur.moba.listeners;
 
 import com.serveur.moba.lane.LaneManager;
 import net.kyori.adventure.text.Component;
