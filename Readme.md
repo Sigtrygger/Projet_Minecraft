@@ -125,9 +125,9 @@ L’objectif ultime est d’ouvrir un **serveur public** pour permettre à d’a
 ## 🔧 Lancer le plugin en local (Paper)
 
 1. Télécharger **Paper 1.21.4** et créer un serveur local.
-2. Compiler le plugin (via Maven/Gradle ou depuis l’IDE) pour obtenir le `.jar`.
-3. Placer le `.jar` dans le dossier `plugins/` du serveur Paper.
-4. Démarrer le serveur.
+2. Compiler le plugin (via Maven/Gradle ou depuis l’IDE) pour obtenir le `.jar`. (gradle clean build / gradle build)
+3. Placer le `.jar` dans le dossier `plugins/` du serveur Paper. (./plugins)
+4. Démarrer le serveur. (java -Xms2G -Xmx4G -jar paper-1.21.8-60.jar dans le root)
 5. Rejoindre le serveur en 1.21.4 et utiliser les commandes exposées par le plugin (sélection de classe, lancement de partie, etc., selon ce qui est déjà implémenté).
 
 ---

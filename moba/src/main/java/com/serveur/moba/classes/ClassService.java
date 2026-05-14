@@ -2,6 +2,8 @@ package com.serveur.moba.classes;
 
 import com.serveur.moba.classes.adc.AdcPassiveListener;
 import com.serveur.moba.kit.KitService;
+import com.serveur.moba.shop.ShopListeners;
+import com.serveur.moba.shop.ShopService;
 import com.serveur.moba.state.PlayerStateService;
 
 import net.kyori.adventure.text.Component;
@@ -16,11 +18,18 @@ public final class ClassService {
     private final PlayerStateService state;
     private final AdcPassiveListener adcListener; // pour reset compteur
     private final KitService kitService;
+    private ShopService shopService;
+    private ShopListeners shopListeners;
 
     public ClassService(PlayerStateService state, AdcPassiveListener adcListener, KitService kitService) {
         this.state = state;
         this.adcListener = adcListener;
         this.kitService = kitService;
+    }
+
+    public void setShopDeps(ShopService shopService, ShopListeners shopListeners) {
+        this.shopService = shopService;
+        this.shopListeners = shopListeners;
     }
 
     public Optional<PlayerStateService.Role> parseRole(String raw) {
@@ -48,6 +57,7 @@ public final class ClassService {
         }
 
         // set l'état
+        clearShopLoadout(p);
         state.setRole(p, newRole);
 
         // --- INIT de la nouvelle classe (si tu veux appliquer quelque chose
@@ -79,6 +89,7 @@ public final class ClassService {
     public void clearClass(Player p) {
 
         disableCurrent(p);
+        clearShopLoadout(p);
 
         kitService.clearKit(p);
 
@@ -95,6 +106,15 @@ public final class ClassService {
         p.setFireTicks(0);
         p.setFallDistance(0);
         p.setAllowFlight(false);
+    }
+
+    public void clearShopLoadout(Player p) {
+        if (shopListeners != null) {
+            shopListeners.clearItemEffects(p);
+        }
+        if (shopService != null) {
+            shopService.clearBoughtItems(p);
+        }
     }
 
 }

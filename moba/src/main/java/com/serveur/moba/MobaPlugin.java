@@ -40,6 +40,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -226,8 +227,15 @@ public final class MobaPlugin extends JavaPlugin implements Listener {
                 // Hooks de nettoyage (désactiver passifs + nettoyer état)
                 pm.registerEvents(new Listener() {
                         @EventHandler
+                        public void onJoin(PlayerJoinEvent e) {
+                                getServer().getScheduler().runTaskLater(MobaPlugin.this,
+                                                () -> classService.clearShopLoadout(e.getPlayer()), 1L);
+                        }
+
+                        @EventHandler
                         public void onQuit(PlayerQuitEvent e) {
                                 classService.disableCurrent(e.getPlayer());
+                                classService.clearShopLoadout(e.getPlayer());
                                 state.clear(e.getPlayer());
                         }
 
@@ -257,6 +265,7 @@ public final class MobaPlugin extends JavaPlugin implements Listener {
                 var shopListeners = new ShopListeners(this, shopService);
                 // On injecte CooldownService, CooldownBase et PlayerStateService pour Navori
                 shopListeners.setCooldownDeps(this.cooldowns, this.cooldownBase, this.state);
+                classService.setShopDeps(shopService, shopListeners);
                 pm.registerEvents(shopListeners, this);
 
                 // Emeraude -> boutique
@@ -292,6 +301,7 @@ public final class MobaPlugin extends JavaPlugin implements Listener {
                 // Désactiver proprement les passifs encore actifs
                 for (Player p : getServer().getOnlinePlayers()) {
                         classService.disableCurrent(p);
+                        classService.clearShopLoadout(p);
                 }
                 getLogger().info("Moba disabled!");
         }

@@ -207,6 +207,16 @@ public class ShopService {
         }
     }
 
+    public void clearBoughtItems(Player p) {
+        active.remove(p.getUniqueId());
+
+        for (ItemStack it : p.getInventory().getContents()) {
+            if (isShopItem(it)) {
+                p.getInventory().remove(it);
+            }
+        }
+    }
+
     public boolean playerHas(Player p, ShopItem item) {
         Set<String> s = active.get(p.getUniqueId());
         return s != null && s.contains(item.id);

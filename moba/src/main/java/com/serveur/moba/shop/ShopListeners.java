@@ -1,6 +1,7 @@
 package com.serveur.moba.shop;
 
 import org.bukkit.Bukkit;
+import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -11,6 +12,7 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.persistence.PersistentDataType;
 
 import com.serveur.moba.ability.AbilityKey;
 import com.serveur.moba.ability.CooldownIds;
@@ -30,6 +32,8 @@ public class ShopListeners implements Listener {
 
     private final Plugin plugin;
     private final ShopService shop;
+    private final NamespacedKey heartsteelStacksKey;
+    private static final double DEFAULT_MAX_HEALTH = 20.0;
 
     // cooldowns / counters
     private final Map<UUID, Long> lastDamageTaken = new HashMap<>(); // for Rookern
@@ -46,6 +50,7 @@ public class ShopListeners implements Listener {
     public ShopListeners(Plugin plugin, ShopService shop) {
         this.plugin = plugin;
         this.shop = shop;
+        this.heartsteelStacksKey = new NamespacedKey(plugin, "heartsteel_stacks");
         // periodic task to check Rookern (10s no damage => grant absorption)
         Bukkit.getScheduler().runTaskTimer(plugin, this::checkRookern, 20L, 20L);
     }
@@ -55,6 +60,55 @@ public class ShopListeners implements Listener {
         this.cds = cds;
         this.base = base;
         this.states = states;
+    }
+
+    public void clearItemEffects(Player p) {
+        UUID id = p.getUniqueId();
+
+        removeHeartsteelStacks(p);
+
+        Buffs.removeSource(p, "item_rookern");
+        Buffs.removeSource(p, "item_sterak");
+
+        lastDamageTaken.remove(id);
+        rookernApplied.remove(id);
+        divineSundererLast.remove(id);
+        sterakCooldown.remove(id);
+        thornCounters.keySet().removeIf(key -> key.contains(id.toString()));
+    }
+
+    private void removeHeartsteelStacks(Player p) {
+        UUID id = p.getUniqueId();
+        int stacks = heartsteelStackCount(p);
+
+        heartsteelCounters.remove(id);
+        heartsteelStacks.remove(id);
+        p.getPersistentDataContainer().remove(heartsteelStacksKey);
+
+        var maxHealth = p.getAttribute(Attribute.MAX_HEALTH);
+        if (maxHealth == null)
+            return;
+
+        maxHealth.setBaseValue(DEFAULT_MAX_HEALTH);
+        p.setHealth(Math.min(p.getHealth(), maxHealth.getValue()));
+    }
+
+    private int heartsteelStackCount(Player p) {
+        int tracked = heartsteelStacks.getOrDefault(p.getUniqueId(), 0);
+        Integer stored = p.getPersistentDataContainer().get(heartsteelStacksKey, PersistentDataType.INTEGER);
+        return Math.max(tracked, stored == null ? 0 : stored);
+    }
+
+    private void setHeartsteelStackCount(Player p, int stacks) {
+        UUID id = p.getUniqueId();
+        if (stacks <= 0) {
+            heartsteelStacks.remove(id);
+            p.getPersistentDataContainer().remove(heartsteelStacksKey);
+            return;
+        }
+
+        heartsteelStacks.put(id, stacks);
+        p.getPersistentDataContainer().set(heartsteelStacksKey, PersistentDataType.INTEGER, stacks);
     }
 
     private void checkRookern() {
@@ -133,8 +187,7 @@ public class ShopListeners implements Listener {
                 attacker.getAttribute(Attribute.MAX_HEALTH).setBaseValue(cur + 1.0);
                 // optionally heal a bit to show the increase:
                 attacker.setHealth(Math.min(attacker.getHealth() + 1.0, cur + 1.0));
-                heartsteelStacks.put(attacker.getUniqueId(),
-                        heartsteelStacks.getOrDefault(attacker.getUniqueId(), 0) + 1);
+                setHeartsteelStackCount(attacker, heartsteelStackCount(attacker) + 1);
             } else {
                 heartsteelCounters.put(attacker.getUniqueId(), c);
             }
@@ -300,6 +353,9 @@ public class ShopListeners implements Listener {
                 UUID id = p.getUniqueId();
                 Buffs.removeSource(p, "item_rookern");
                 lastDamageTaken.remove(id);
+            }
+            if (item == ShopItem.TANK_HEARTSTEEL) {
+                removeHeartsteelStacks(p);
             }
             shop.removeBoughtItem(p, item);
             p.sendMessage("§eTu revends §e" + item.display + "§e.");
